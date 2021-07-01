@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-producer-api-key
+  labels:
+    authorino.3scale.net/managed-by: authorino
+    kafka-scope: edge-authentication
+  annotations:
+    kafka-auth/username: kafka-producer
+    kafka-auth/resource: topic:demo
+    kafka-auth/operations: "Create Describe Write"
+stringData:
+  api_key: 8a0cad1ec1a3fd3c0896842bc1c6b9fafc491fce2f5a8784f4fef08e909c8c6c
+type: Opaque

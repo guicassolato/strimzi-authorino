@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kafka-consumer-api-key
+  labels:
+    authorino.3scale.net/managed-by: authorino
+    kafka-scope: edge-authentication
+  annotations:
+    kafka-auth/username: kafka-consumer
+    kafka-auth/resource: topic:demo
+    kafka-auth/operations: "Describe Read"
+stringData:
+  api_key: e06395cb65e05fcfeb743bbb05e4bf4eac81a0dc7fc8820783b788996f681119
+type: Opaque
