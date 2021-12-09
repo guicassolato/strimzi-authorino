@@ -7,21 +7,21 @@ spec:
   - name: kafka-consumer
     image: quay.io/guicassolato/authorino:kafka-client
     command:
-      - ruby
-      - main.rb
-      - --mode=consumer
-      - --token-endpoint=http://edge.kafka.svc:8000/token
-      - --bootstrap-server=my-cluster-kafka-bootstrap:9093
-      - --topic=demo
-      - --server-ca-file-path=/etc/ssl/certs/kafka-server-ca.crt
+    - ruby
+    - main.rb
+    - --mode=consumer
+    - --token-endpoint=http://edge.kafka.svc:8000/token
+    - --bootstrap-server=my-cluster-kafka-bootstrap:9093
+    - --topic=demo
+    - --server-ca-file-path=/etc/ssl/certs/kafka-server-ca.crt
     stdin: true
     tty: true
     env:
-      - name: API_KEY
-        valueFrom:
-          secretKeyRef:
-            name: kafka-consumer-api-key
-            key: api_key
+    - name: API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: kafka-consumer-api-key
+          key: api_key
     volumeMounts:
     - name: certs
       mountPath: /etc/ssl/certs

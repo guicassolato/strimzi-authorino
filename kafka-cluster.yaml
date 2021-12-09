@@ -7,22 +7,22 @@ spec:
     version: 2.8.0
     replicas: 1
     listeners:
-      - name: plain
-        port: 9092
-        type: internal
-        tls: false
-      - name: tls
-        port: 9093
-        type: internal
-        tls: true
-        authentication:
-          type: oauth
-          validIssuerUri: https://authorino-oidc.kafka.svc:8083/kafka/authentication
-          jwksEndpointUri: https://authorino-oidc.kafka.svc:8083/kafka/authentication/.well-known/openid-connect/certs
-          userNameClaim: preferred_username
-          tlsTrustedCertificates:
-            - secretName: authorino-ca-cert
-              certificate: ca.crt
+    - name: plain
+      port: 9092
+      type: internal
+      tls: false
+    - name: tls
+      port: 9093
+      type: internal
+      tls: true
+      authentication:
+        type: oauth
+        validIssuerUri: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband
+        jwksEndpointUri: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband/.well-known/openid-connect/certs
+        userNameClaim: preferred_username
+        tlsTrustedCertificates:
+        - secretName: authorino-ca-cert
+          certificate: ca.crt
     authorization:
       type: keycloak
       tokenEndpointUri: http://auth.kafka.svc:8000/check

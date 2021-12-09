@@ -2,7 +2,6 @@
 skinparam monochrome true
 
 title Securing Kafka brokers with Authorino
-footer Page %page% of %lastpage%
 
 actor sysadmin
 actor "Resource owner"
@@ -11,24 +10,23 @@ participant Consumer
 participant "Kubernetes API"
 participant Envoy
 participant Authorino
-participant "JWT decoder"
 participant Kafka
 
 == Setup ==
 sysadmin -> "Kubernetes API" : Setup Kafka authentication
-note left: apiVersion: config.authorino.3scale.net/v1beta1\nkind: Service\nspec:\n  host: edge.kafka.svc\n  identity: apiKey\n  wristband: https://authorino-oidc.kafka.svc:8083/kafka/authentication
+note left: apiVersion: authorino.3scale.net/v1beta1\nkind: AuthConfig\nspec:\n  host: edge.kafka.svc\n  identity:\n  - apiKey: {...}\n  response:\n  - wristband:\n      issuer: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband
 "Kubernetes API" -> Authorino : Reconcile
 Authorino -> Authorino : Cache authN config
 sysadmin -> "Kubernetes API" : Setup Kafka authorization
-note left: apiVersion: config.authorino.3scale.net/v1beta1\nkind: Service\nspec:\n  host: auth.kafka.svc\n  identity: oidc\n    endpoint: https://authorino-oidc.kafka.svc:8083/kafka/authentication\n  wristband: https://authorino-oidc.kafka.svc:8083/kafka/authorization
+note left: apiVersion: authorino.3scale.net/v1beta1\nkind: AuthConfig\nspec:\n  host: auth.kafka.svc\n  identity:\n  - oidc:\n      endpoint: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband\n  response:\n  - json: {...}
 "Kubernetes API" -> Authorino : Reconcile
 Authorino -> Authorino : Cache authZ config
 sysadmin -> "Kubernetes API" : Setup Kafka cluster
-note left: apiVersion: kafka.strimzi.io/v1beta2\nkind: Kafka\nspec:\n  authentication: https://authorino-oidc.kafka.svc:8083/kafka/authentication\n  authorization: http://auth.kafka.svc:8000/check
+note left: apiVersion: kafka.strimzi.io/v1beta2\nkind: Kafka\nspec:\n  authentication: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband\n  authorization: http://auth.kafka.svc:8000/check
 "Kubernetes API" -> Kafka : Reconcile
 Kafka -> Kafka : Start new cluster
 Kafka -> Authorino : Fetch wristband JWKS
-note left: GET https://authorino-oidc.kafka.svc:8083/kafka/authentication/.well-known/openid-connect/certs
+note left: GET https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband/.well-known/openid-connect/certs
 Authorino -> Kafka
 note right: JWKS
 Kafka -> Kafka : Cache JWKS
@@ -54,9 +52,8 @@ note right: GET http://edge.kafka.svc/token\nAuthorization: APIKEY <api-producer
 Envoy -> Authorino : Authenticate
 Authorino -> Authorino : Validate API key
 Authorino -> Envoy : Supply wristband
-note left: iss: https://authorino-oidc.kafka.svc:8083/kafka/authentication\npreferred_username: kafka-producer\nrsname: topic:demo\nscopes: Create Describe Write
-Envoy -> "JWT decoder"
-"JWT decoder" -> Producer
+note left: iss: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband\npreferred_username: kafka-producer\nrsname: topic:demo\nscopes: Create Describe Write
+Envoy -> Producer
 Producer -> Kafka : Connect
 note right: Wristband
 Kafka -> Kafka : Verify/validate Wristband
@@ -68,11 +65,9 @@ loop 10s
   note left: POST http://auth.kafka.svc/check\nAuthorization: Bearer <wristband>
   Envoy -> Authorino : Authorize
   Authorino -> Authorino : Verify/Validate wristband
-  Authorino -> Envoy : Supply wristband'
-  note left: iss: https://authorino-oidc.kafka.svc:8083/kafka/authorization\nrsname: topic:demo\nscopes: Create Describe Write
-  Envoy -> "JWT decoder"
-  "JWT decoder" -> Kafka
-  note right: Wristband'
+  Authorino -> Envoy : Supply permissions
+  note left: [{"rsname":"topic:demo","scopes":"Create Describe Write"}]
+  Envoy -> Kafka
   Kafka -> Kafka : Cache permissions
 end
 Kafka -> Kafka : Check permissions
@@ -87,9 +82,8 @@ note right: GET http://edge.kafka.svc/token\nAuthorization: APIKEY <api-consumer
 Envoy -> Authorino : Authenticate
 Authorino -> Authorino : Validate API key
 Authorino -> Envoy : Supply wristband
-note left: iss: https://authorino-oidc.kafka.svc:8083/kafka/authentication\npreferred_username: kafka-consumer\nrsname: topic:demo\nscopes: Describe Read
-Envoy -> "JWT decoder"
-"JWT decoder" -> Consumer
+note left: iss: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband\npreferred_username: kafka-consumer\nrsname: topic:demo\nscopes: Describe Read
+Envoy -> Consumer
 Consumer -> Kafka : Connect
 note right: Wristband
 Kafka -> Kafka : Verify/validate Wristband
@@ -100,11 +94,9 @@ loop 10s
   note left: POST http://auth.kafka.svc/check\nAuthorization: Bearer <wristband>
   Envoy -> Authorino : Authorize
   Authorino -> Authorino : Verify/validate wristband
-  Authorino -> Envoy : Supply wristband'
-  note left: iss: https://authorino-oidc.kafka.svc:8083/kafka/authorization\nrsname: topic:demo\nscopes: Describe Read
-  Envoy -> "JWT decoder"
-  "JWT decoder" -> Kafka
-  note right: Wristband'
+  Authorino -> Envoy : Supply permissions
+  note left: [{"rsname":"topic:demo","scopes":"Describe Read"}]
+  Envoy -> Kafka
   Kafka -> Kafka : Cache permissions
 end
 Kafka -> Kafka : Check permissions
