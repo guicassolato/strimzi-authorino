@@ -1,33 +1,26 @@
-apiVersion: config.authorino.3scale.net/v1beta1
-kind: Service
+apiVersion: authorino.3scale.net/v1beta1
+kind: AuthConfig
 metadata:
   name: authentication
 spec:
   hosts:
-    - edge.kafka.svc
-    - edge.kafka.127.0.0.1.nip.io
+  - edge.kafka.svc
+  - edge.kafka.127.0.0.1.nip.io
   identity:
-    - name: edge
-      apiKey:
-        labelSelectors:
-          authorino.3scale.net/managed-by: authorino
-          kafka-scope: edge-authentication
-      credentials:
-        in: authorization_header
-        keySelector: APIKEY
-  authorization:
-    - name: token-path
-      json:
-        rules:
-          - selector: context.request.http.method
-            operator: eq
-            value: GET
-          - selector: context.request.http.path
-            operator: eq
-            value: /token
-  wristband:
-    issuer: https://authorino-oidc.kafka.svc:8083/kafka/authentication
-    customClaims:
+  - name: edge
+    apiKey:
+      labelSelectors:
+        authorino.3scale.net/managed-by: authorino
+        kafka-scope: edge-authentication
+    credentials:
+      in: authorization_header
+      keySelector: APIKEY
+  response:
+  - name: wristband
+    wrapper: envoyDynamicMetadata
+    wristband:
+      issuer: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband
+      customClaims:
       - name: typ
         value: Bearer
       - name: preferred_username
@@ -39,8 +32,8 @@ spec:
       - name: scopes
         valueFrom:
           authJSON: auth.identity.metadata.annotations.kafka-auth/operations
-    tokenDuration: 600
-    signingKeyRefs:
+      tokenDuration: 600
+      signingKeyRefs:
       - name: wristband-signing-key
         algorithm: RS256
 ---

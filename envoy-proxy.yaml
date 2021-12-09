@@ -1,48 +1,3 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: envoy
-  labels:
-    app: authorino
-    svc: envoy
-spec:
-  selector:
-    matchLabels:
-      app: authorino
-      svc: envoy
-  template:
-    metadata:
-      labels:
-        app: authorino
-        svc: envoy
-    spec:
-      containers:
-        - name: envoy
-          image: envoyproxy/envoy:v1.17-latest
-          command: ["/usr/local/bin/envoy"]
-          args:
-            - --config-path /usr/local/etc/envoy/envoy.yaml
-            - --service-cluster front-proxy
-            - --log-level info
-            - --component-log-level filter:trace,http:debug,router:debug
-          ports:
-            - name: web
-              containerPort: 8000
-            - name: admin
-              containerPort: 8001
-          volumeMounts:
-            - name: config
-              mountPath: /usr/local/etc/envoy
-              readOnly: true
-      volumes:
-        - name: config
-          configMap:
-            name: envoy
-            items:
-              - key: envoy.yaml
-                path: envoy.yaml
-  replicas: 1
----
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -64,20 +19,42 @@ data:
               "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
               stat_prefix: local
               route_config:
-                name: local_route
+                name: authn_authz
                 virtual_hosts:
-                - name: local_service
-                  domains: ['*']
+                - name: edge
+                  domains: ['edge.kafka.*']
                   typed_per_filter_config:
                     envoy.filters.http.ext_authz:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                       check_settings:
                         context_extensions:
-                          virtual_host: local_service
+                          virtual_host: edge
+                    envoy.filters.http.lua:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.LuaPerRoute
+                      name: wristband.lua
                   routes:
-                  - match: { prefix: / }
-                    route:
-                      cluster: backend
+                  - match:
+                      path: /token
+                      headers: [{ name: ":method", exact_match: "GET" }]
+                    direct_response:
+                      status: 200
+                - name: auth
+                  domains: ['auth.kafka.*']
+                  typed_per_filter_config:
+                    envoy.filters.http.ext_authz:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                      check_settings:
+                        context_extensions:
+                          virtual_host: auth
+                    envoy.filters.http.lua:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.LuaPerRoute
+                      name: permissions.lua
+                  routes:
+                  - match:
+                      path: /check
+                      headers: [{ name: ":method", exact_match: "POST" }]
+                    direct_response:
+                      status: 200
               http_filters:
               - name: envoy.filters.http.ext_authz
                 typed_config:
@@ -89,6 +66,48 @@ data:
                     envoy_grpc:
                       cluster_name: external_auth
                     timeout: 1s
+              - name: envoy.filters.http.lua
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                  inline_code: |
+                    function envoy_on_response(response_handle)
+                    end
+                  source_codes:
+                    wristband.lua:
+                      inline_string: |
+                        function envoy_on_response(response_handle)
+                          local metadata = response_handle:streamInfo():dynamicMetadata()
+                          local wristband = metadata:get("envoy.filters.http.ext_authz")["wristband"]
+                          response_handle:headers():replace("content-type", "application/json")
+                          response_handle:body(true):setBytes("{\"token\":\""..wristband.."\"}")
+                        end
+                    permissions.lua:
+                      inline_string: |
+                        function table_to_string(tbl)
+                          local result = "{"
+                          for key, val in pairs(tbl) do
+                            result = result.."\""..key.."\""..":"
+                            if type(val) == "table" then
+                              result = result..table_to_string(val)
+                            elseif type(val) == "boolean" then
+                              result = result..tostring(val)
+                            else
+                              result = result.."\""..val.."\""
+                            end
+                            result = result..","
+                          end
+                          if result ~= "" then
+                            result = result:sub(1, result:len()-1)
+                          end
+                          return result.."}"
+                        end
+
+                        function envoy_on_response(response_handle)
+                          local metadata = response_handle:streamInfo():dynamicMetadata()
+                          local permissions = metadata:get("envoy.filters.http.ext_authz")["permissions"]
+                          response_handle:headers():replace("content-type", "application/json")
+                          response_handle:body(true):setBytes("["..table_to_string(permissions).."]")
+                        end
               - name: envoy.filters.http.router
                 typed_config: {}
               use_remote_address: true
@@ -105,24 +124,69 @@ data:
             - endpoint:
                 address:
                   socket_address:
-                    address: authorino-authorization
+                    address: authorino-authorino-authorization
                     port_value: 50051
-      - name: backend
-        connect_timeout: 0.25s
-        type: strict_dns
-        lb_policy: round_robin
-        load_assignment:
-          cluster_name: backend
-          endpoints:
-          - lb_endpoints:
-            - endpoint:
-                address:
-                  socket_address:
-                    address: jwt-decoder
-                    port_value: 3000
+        transport_socket:
+          name: envoy.transport_sockets.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+            common_tls_context:
+              validation_context:
+                trusted_ca:
+                  filename: /etc/ssl/certs/authorino-ca-cert.crt
     admin:
       access_log_path: "/tmp/admin_access.log"
       address:
         socket_address:
           address: 0.0.0.0
           port_value: 8001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy
+  labels:
+    app: envoy
+spec:
+  selector:
+    matchLabels:
+      app: envoy
+  template:
+    metadata:
+      labels:
+        app: envoy
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.20-latest
+        command: ["/usr/local/bin/envoy"]
+        args:
+        - --config-path /usr/local/etc/envoy/envoy.yaml
+        - --service-cluster front-proxy
+        - --log-level info
+        - --component-log-level filter:trace,http:debug,router:debug
+        ports:
+        - name: web
+          containerPort: 8000
+        - name: admin
+          containerPort: 8001
+        volumeMounts:
+        - name: config
+          mountPath: /usr/local/etc/envoy
+          readOnly: true
+        - name: authorino-ca-cert
+          mountPath: /etc/ssl/certs/authorino-ca-cert.crt
+          readOnly: true
+          subPath: ca.crt
+      volumes:
+      - name: config
+        configMap:
+          name: envoy
+          items:
+          - key: envoy.yaml
+            path: envoy.yaml
+      - name: authorino-ca-cert
+        secret:
+          defaultMode: 420
+          secretName: authorino-ca-cert
+  replicas: 1

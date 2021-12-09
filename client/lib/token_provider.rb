@@ -16,7 +16,7 @@ class TokenProvider
       request = Net::HTTP::Get.new(endpoint)
       request['Authorization'] = "APIKEY #{api_key}"
       response = http.request(request)
-      @token = response.value || response['x-ext-auth-wristband']
+      @token = JSON.parse(response.body)['token']
     end
   end
 end

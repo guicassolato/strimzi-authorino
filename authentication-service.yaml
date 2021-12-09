@@ -4,8 +4,7 @@ metadata:
   name: edge
 spec:
   selector:
-    app: authorino
-    svc: envoy
+    app: envoy
   ports:
     - name: http
       port: 8000

@@ -1,33 +1,22 @@
-apiVersion: config.authorino.3scale.net/v1beta1
-kind: Service
+apiVersion: authorino.3scale.net/v1beta1
+kind: AuthConfig
 metadata:
   name: authorization
 spec:
   hosts:
-    - auth.kafka.svc
+  - auth.kafka.svc
   identity:
-    - name: wristband
-      oidc:
-        endpoint: https://authorino-oidc.kafka.svc:8083/kafka/authentication
-  authorization:
-    - name: authorization-path
-      json:
-        rules:
-          - selector: context.request.http.method
-            operator: eq
-            value: POST
-          - selector: context.request.http.path
-            operator: eq
-            value: /check
-  wristband:
-    issuer: https://authorino-oidc.kafka.svc:8083/kafka/authorization
-    customClaims:
+  - name: wristband
+    oidc:
+      endpoint: https://authorino-authorino-oidc.kafka.svc:8083/kafka/authentication/wristband
+  response:
+  - name: permissions
+    wrapper: envoyDynamicMetadata
+    json:
+      properties:
       - name: rsname
         valueFrom:
           authJSON: auth.identity.rsname
       - name: scopes
         valueFrom:
           authJSON: auth.identity.scopes
-    signingKeyRefs:
-      - name: wristband-signing-key
-        algorithm: RS256
